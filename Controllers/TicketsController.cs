@@ -1,27 +1,25 @@
 using Microsoft.AspNetCore.Mvc;
+using Wolverine;
 
 [ApiController]
 [Route("api/[controller]")]
 [Produces("application/json")]
 public class TicketsController : ControllerBase
 {
-    private readonly ITicketService _ticketService;
+    private readonly IMessageBus _bus;
 
-    public TicketsController(ITicketService ticketService)
+    public TicketsController(IMessageBus bus)
     {
-        _ticketService = ticketService;
+        _bus = bus;
     }
 
     [HttpGet]
     [ProducesResponseType(typeof(PagedResult<TicketResponseDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<PagedResult<TicketResponseDto>>> GetAll(
         [FromQuery] TicketQueryParameters parameters,
         CancellationToken cancellationToken)
-    {
-        var page = await _ticketService.GetPagedAsync(parameters, cancellationToken);
-        return Ok(page);
-    }
+        => Ok(await _bus.InvokeAsync<PagedResult<TicketResponseDto>>(
+            new GetTicketsQuery(parameters), cancellationToken));
 
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(TicketResponseDto), StatusCodes.Status200OK)]
@@ -30,24 +28,20 @@ public class TicketsController : ControllerBase
         Guid id,
         CancellationToken cancellationToken)
     {
-        var ticket = await _ticketService.GetByIdAsync(id, cancellationToken);
+        var ticket = await _bus.InvokeAsync<TicketResponseDto?>(
+            new GetTicketByIdQuery(id), cancellationToken);
 
-        if (ticket is null)
-        {
-            return NotFound();
-        }
-
-        return Ok(ticket);
+        return ticket is null ? NotFound() : Ok(ticket);
     }
 
     [HttpPost]
     [ProducesResponseType(typeof(TicketResponseDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<TicketResponseDto>> Create(
-        [FromBody] TicketCreateDto dto,
+        [FromBody] CreateTicketCommand command,
         CancellationToken cancellationToken)
     {
-        var created = await _ticketService.CreateAsync(dto, cancellationToken);
+        var created = await _bus.InvokeAsync<TicketResponseDto>(command, cancellationToken);
 
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
     }
@@ -59,24 +53,15 @@ public class TicketsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<TicketResponseDto>> Update(
         Guid id,
-        [FromBody] TicketUpdateDto dto,
+        [FromBody] UpdateTicketRequest body,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var updated = await _ticketService.UpdateAsync(id, dto, cancellationToken);
+        var command = new UpdateTicketCommand(
+            id, body.Subject, body.Description, body.Status, body.Priority);
 
-            if (updated is null)
-            {
-                return NotFound();
-            }
+        var updated = await _bus.InvokeAsync<TicketResponseDto?>(command, cancellationToken);
 
-            return Ok(updated);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Conflict(new { error = ex.Message });
-        }
+        return updated is null ? NotFound() : Ok(updated);
     }
 
     [HttpDelete("{id:guid}")]
@@ -84,13 +69,14 @@ public class TicketsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        var deleted = await _ticketService.DeleteAsync(id, cancellationToken);
+        var deleted = await _bus.InvokeAsync<bool>(new DeleteTicketCommand(id), cancellationToken);
 
-        if (!deleted)
-        {
-            return NotFound();
-        }
-
-        return NoContent();
+        return deleted ? NoContent() : NotFound();
     }
 }
+
+public record UpdateTicketRequest(
+    string Subject,
+    string Description,
+    TicketStatus Status,
+    TicketPriority Priority);
