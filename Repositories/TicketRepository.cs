@@ -1,19 +1,19 @@
 
 using Microsoft.EntityFrameworkCore;
 
-public class TicketRepository: ITicketRepository
+public class TicketRepository : ITicketRepository
 {
-    private readonly TicketingDbContext dbContext;
+    private readonly TicketingDbContext _context;
 
-    public TicketRepository(TicketingDbContext dbContext)
+    public TicketRepository(TicketingDbContext context)
     {
-        this.dbContext = dbContext;    
+        _context = context;
     }
 
     public async Task<PagedResult<Ticket>> GetPagedAsync(TicketQueryParameters parameters, CancellationToken cancellationToken)
     {
 
-        IQueryable<Ticket> query = dbContext.Tickets.AsNoTracking();
+        IQueryable<Ticket> query = _context.Tickets.AsNoTracking();
 
         query = ApplyFilters(query, parameters);
 
@@ -30,12 +30,12 @@ public class TicketRepository: ITicketRepository
         return new PagedResult<Ticket>(items, parameters.Page, parameters.PageSize, totalCount);
     }
     public async Task<Ticket?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
-        await dbContext.Tickets
+        await _context.Tickets
             .FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
 
-    public void Add(Ticket ticket) => dbContext.Tickets.Add(ticket);
+    public void Add(Ticket ticket) => _context.Tickets.Add(ticket);
 
-    public void Remove(Ticket ticket) => dbContext.Tickets.Remove(ticket);
+    public void Remove(Ticket ticket) => _context.Tickets.Remove(ticket);
 
     private static IQueryable<Ticket> ApplyFilters(IQueryable<Ticket> query, TicketQueryParameters p)
     {
